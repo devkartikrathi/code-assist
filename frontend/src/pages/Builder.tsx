@@ -20,15 +20,14 @@ interface LocationState {
 
 export function Builder() {
   const location = useLocation();
-  const state = location.state as LocationState;
-  const { prompt } = state;
-  const [loading, setLoading] = useState(false);
-  const [templateSet, setTemplateSet] = useState(false);
-  const webcontainer = useWebContainer();
-  const [userPrompt, setUserPrompt] = useState("");
+  const { prompt } = location.state as LocationState;
+  const [userPrompt, setPrompt] = useState("");
   const [llmMessages, setLlmMessages] = useState<
     Array<{ role: "user" | "assistant"; content: string }>
   >([]);
+  const [loading, setLoading] = useState(false);
+  const [templateSet, setTemplateSet] = useState(false);
+  const webcontainer = useWebContainer();
 
   const [currentStep, setCurrentStep] = useState(1);
   const [activeTab, setActiveTab] = useState<"code" | "preview">("code");
@@ -44,19 +43,18 @@ export function Builder() {
       .map((step) => {
         updateHappened = true;
         if (step?.type === StepType.CreateFile) {
-          const parsedPath = step.path?.split("/") ?? []; // ["src", "components", "App.tsx"]
-          let currentFileStructure = [...originalFiles]; // {}
-          const finalAnswerRef = currentFileStructure;
+          let parsedPath = step.path?.split("/") ?? [];
+          let currentFileStructure = [...originalFiles];
+          let finalAnswerRef = currentFileStructure;
 
           let currentFolder = "";
           while (parsedPath.length) {
-            const currentFolderName = parsedPath[0];
-            currentFolder = `${currentFolder}/${currentFolderName}`;
-            parsedPath.shift();
+            currentFolder = `${currentFolder}/${parsedPath[0]}`;
+            let currentFolderName = parsedPath[0];
+            parsedPath = parsedPath.slice(1);
 
             if (!parsedPath.length) {
-              // final file
-              const file = currentFileStructure.find(
+              let file = currentFileStructure.find(
                 (x) => x.path === currentFolder
               );
               if (!file) {
@@ -70,12 +68,10 @@ export function Builder() {
                 file.content = step.code;
               }
             } else {
-              /// in a folder
-              const folder = currentFileStructure.find(
+              let folder = currentFileStructure.find(
                 (x) => x.path === currentFolder
               );
               if (!folder) {
-                // create the folder
                 currentFileStructure.push({
                   name: currentFolderName,
                   type: "folder",
@@ -139,40 +135,54 @@ export function Builder() {
     }
   }, [files, webcontainer]);
 
+  async function init() {
+    const response = await axios.post(`${BACKEND_URL}/template`, {
+      prompt: prompt.trim(),
+    });
+    setTemplateSet(true);
+
+    const { prompts, uiPrompts } = response.data;
+
+    setSteps(
+      parseXml(uiPrompts[0]).map((x: Step) => ({
+        ...x,
+        status: "pending",
+      }))
+    );
+
+    setLoading(true);
+    const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
+      messages: [...prompts, prompt].map((content) => ({
+        role: "user",
+        content,
+      })),
+    });
+
+    setLoading(false);
+
+    setSteps((s) => [
+      ...s,
+      ...parseXml(stepsResponse.data.response).map((x) => ({
+        ...x,
+        status: "pending" as "pending",
+      })),
+    ]);
+
+    setLlmMessages(
+      [...prompts, prompt].map((content) => ({
+        role: "user",
+        content,
+      }))
+    );
+
+    setLlmMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: stepsResponse.data.response },
+    ]);
+  }
+
   useEffect(() => {
-    async function initTemplate() {
-      const response = await axios.post(`${BACKEND_URL}/template`, {
-        prompt: prompt.trim(),
-      });
-      setTemplateSet(true);
-
-      const { prompts, uiPrompts } = response.data;
-      setSteps(
-        parseXml(uiPrompts[0]).map((x: Step) => ({
-          ...x,
-          status: "pending",
-        }))
-      );
-
-      setLoading(true);
-      const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
-        messages: [...prompts, prompt].map((content) => ({
-          role: "user",
-          content,
-        })),
-      });
-
-      setLoading(false);
-      setSteps((s) => [
-        ...s,
-        ...parseXml(stepsResponse.data.response).map((x) => ({
-          ...x,
-          status: "pending" as "pending",
-        })),
-      ]);
-    }
-
-    initTemplate();
+    init();
   }, [prompt]);
 
   const handleChatSubmit = async () => {
@@ -189,27 +199,21 @@ export function Builder() {
         messages: [...llmMessages, newMessage],
       });
 
+      setLlmMessages((prev) => [...prev, newMessage]);
       setLlmMessages((prev) => [
         ...prev,
-        newMessage,
-        {
-          role: "assistant",
-          content: stepsResponse.data.response,
-        } as const,
+        { role: "assistant", content: stepsResponse.data.response },
       ]);
 
-      setSteps((s) => [
-        ...s,
-        ...parseXml(stepsResponse.data.response).map(
-          (x) =>
-            ({
-              ...x,
-              status: "pending",
-            } as const)
-        ),
+      setSteps((currentSteps) => [
+        ...currentSteps,
+        ...parseXml(stepsResponse.data.response).map((step) => ({
+          ...step,
+          status: "pending",
+        })),
       ]);
 
-      setUserPrompt("");
+      setPrompt("");
     } catch (error) {
       console.error("Chat error:", error);
     } finally {
@@ -240,7 +244,54 @@ export function Builder() {
         {/* Main Content */}
         <div className="flex-1 overflow-hidden">
           <div className="h-full flex">
-            {/* Left Sidebar - File Explorer */}
+            {/* Left Sidebar - Steps and Chat */}
+            <div className="w-80 border-r border-gray-200 bg-white flex flex-col">
+              <div className="flex-1 p-4 overflow-y-auto">
+                <div className="space-y-4">
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Build Progress
+                  </h2>
+                  <StepsList
+                    steps={steps}
+                    currentStep={currentStep}
+                    onStepClick={(step) => setCurrentStep(step)}
+                  />
+                </div>
+              </div>
+
+              {/* Chat Section */}
+              <div className="border-t border-gray-200 p-4">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-gray-900">
+                    <MessageSquare className="w-5 h-5 text-blue-500" />
+                    <h3 className="font-medium">AI Assistant</h3>
+                  </div>
+                  {loading || !templateSet ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader />
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <textarea
+                        value={userPrompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        placeholder="Ask for modifications or clarifications..."
+                        className="w-full p-3 bg-gray-50 text-gray-900 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none placeholder-gray-400 pr-12 min-h-[100px]"
+                      />
+                      <button
+                        onClick={handleChatSubmit}
+                        disabled={loading || !templateSet}
+                        className="absolute bottom-3 right-3 p-2 text-blue-500 hover:text-blue-600 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <Send className="w-5 h-5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* File Explorer */}
             <div className="w-64 border-r border-gray-200 bg-white p-4">
               <FileExplorer files={files} onFileSelect={setSelectedFile} />
             </div>
@@ -269,48 +320,6 @@ export function Builder() {
                     <div className="text-gray-500">Loading preview...</div>
                   </div>
                 )}
-              </div>
-            </div>
-
-            {/* Right Sidebar - Steps and Chat */}
-            <div className="w-80 border-l border-gray-200 bg-white flex flex-col">
-              {/* Steps Section */}
-              <div className="flex-1 p-4 overflow-y-auto">
-                <div className="space-y-4">
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    Build Progress
-                  </h2>
-                  <StepsList
-                    steps={steps}
-                    currentStep={currentStep}
-                    onStepClick={(step) => setCurrentStep(step)}
-                  />
-                </div>
-              </div>
-
-              {/* Chat Section */}
-              <div className="border-t border-gray-200 p-4">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-gray-900">
-                    <MessageSquare className="w-5 h-5 text-blue-500" />
-                    <h3 className="font-medium">AI Assistant</h3>
-                  </div>
-                  <div className="relative">
-                    <textarea
-                      value={userPrompt}
-                      onChange={(e) => setUserPrompt(e.target.value)}
-                      placeholder="Ask for modifications or clarifications..."
-                      className="w-full p-3 bg-gray-50 text-gray-900 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none placeholder-gray-400 pr-12 min-h-[100px]"
-                    />
-                    <button
-                      onClick={handleChatSubmit}
-                      disabled={loading || !templateSet}
-                      className="absolute bottom-3 right-3 p-2 text-blue-500 hover:text-blue-600 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <Send className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
