@@ -12,7 +12,7 @@ import { parseXml } from "../steps";
 import { useWebContainer } from "../hooks/useWebContainer";
 import { FileSystemTree } from "@webcontainer/api";
 import { Loader } from "../components/Loader";
-import { Sparkles, Send, MessageSquare } from "lucide-react";
+import { Sparkles, Send, MessageSquare, Check, X } from "lucide-react";
 
 interface LocationState {
   prompt: string;
@@ -34,69 +34,75 @@ export function Builder() {
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
+  const [pendingChanges, setPendingChanges] = useState<{
+    originalFiles: FileItem[];
+    newFiles: FileItem[];
+    steps: Step[];
+  } | null>(null);
 
   useEffect(() => {
-    let originalFiles = [...files];
-    let updateHappened = false;
-    steps
-      .filter(({ status }) => status === "pending")
-      .map((step) => {
-        updateHappened = true;
-        if (step?.type === StepType.CreateFile) {
-          let parsedPath = step.path?.split("/") ?? [];
-          let currentFileStructure = [...originalFiles];
-          let finalAnswerRef = currentFileStructure;
+    if (!pendingChanges) {
+      const stepsToProcess = steps.filter(({ status }) => status === "pending");
+      if (stepsToProcess.length > 0) {
+        const originalFiles = [...files];
+        const newFiles = [...files];
+        let updateHappened = false;
 
-          let currentFolder = "";
-          while (parsedPath.length) {
-            currentFolder = `${currentFolder}/${parsedPath[0]}`;
-            let currentFolderName = parsedPath[0];
-            parsedPath = parsedPath.slice(1);
+        stepsToProcess.forEach((step) => {
+          updateHappened = true;
+          if (step?.type === StepType.CreateFile) {
+            let parsedPath = step.path?.split("/") ?? [];
+            let currentFileStructure = newFiles;
 
-            if (!parsedPath.length) {
-              let file = currentFileStructure.find(
-                (x) => x.path === currentFolder
-              );
-              if (!file) {
-                currentFileStructure.push({
-                  name: currentFolderName,
-                  type: "file",
-                  path: currentFolder,
-                  content: step.code,
-                });
+            let currentFolder = "";
+            while (parsedPath.length) {
+              currentFolder = `${currentFolder}/${parsedPath[0]}`;
+              const currentFolderName = parsedPath[0];
+              parsedPath = parsedPath.slice(1);
+
+              if (!parsedPath.length) {
+                const file = currentFileStructure.find(
+                  (x) => x.path === currentFolder
+                );
+                if (!file) {
+                  currentFileStructure.push({
+                    name: currentFolderName,
+                    type: "file",
+                    path: currentFolder,
+                    content: step.code,
+                  });
+                } else {
+                  file.content = step.code;
+                }
               } else {
-                file.content = step.code;
-              }
-            } else {
-              let folder = currentFileStructure.find(
-                (x) => x.path === currentFolder
-              );
-              if (!folder) {
-                currentFileStructure.push({
-                  name: currentFolderName,
-                  type: "folder",
-                  path: currentFolder,
-                  children: [],
-                });
-              }
+                const folder = currentFileStructure.find(
+                  (x) => x.path === currentFolder
+                );
+                if (!folder) {
+                  currentFileStructure.push({
+                    name: currentFolderName,
+                    type: "folder",
+                    path: currentFolder,
+                    children: [],
+                  });
+                }
 
-              currentFileStructure = currentFileStructure.find(
-                (x) => x.path === currentFolder
-              )!.children!;
+                currentFileStructure = currentFileStructure.find(
+                  (x) => x.path === currentFolder
+                )!.children!;
+              }
             }
           }
-          originalFiles = finalAnswerRef;
-        }
-      });
+        });
 
-    if (updateHappened) {
-      setFiles(originalFiles);
-      setSteps((steps) =>
-        steps.map((s: Step) => ({
-          ...s,
-          status: "completed",
-        }))
-      );
+        if (updateHappened) {
+          setPendingChanges({
+            originalFiles,
+            newFiles,
+            steps: stepsToProcess,
+          });
+        }
+      }
     }
   }, [steps, files]);
 
@@ -188,10 +194,7 @@ export function Builder() {
   const handleChatSubmit = async () => {
     if (!userPrompt.trim()) return;
 
-    const newMessage = {
-      role: "user",
-      content: userPrompt,
-    } as const;
+    const newMessage = { role: "user", content: userPrompt } as const;
 
     setLoading(true);
     try {
@@ -202,15 +205,18 @@ export function Builder() {
       setLlmMessages((prev) => [...prev, newMessage]);
       setLlmMessages((prev) => [
         ...prev,
-        { role: "assistant", content: stepsResponse.data.response },
+        { role: "assistant", content: stepsResponse.data.response } as const,
       ]);
 
       setSteps((currentSteps) => [
         ...currentSteps,
-        ...parseXml(stepsResponse.data.response).map((step) => ({
-          ...step,
-          status: "pending",
-        })),
+        ...parseXml(stepsResponse.data.response).map(
+          (step) =>
+            ({
+              ...step,
+              status: "pending",
+            } as const)
+        ),
       ]);
 
       setPrompt("");
@@ -218,6 +224,28 @@ export function Builder() {
       console.error("Chat error:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAcceptChanges = () => {
+    if (pendingChanges) {
+      setFiles(pendingChanges.newFiles);
+      setSteps((steps) =>
+        steps.map((s) => ({
+          ...s,
+          status: s.status === "pending" ? "completed" : s.status,
+        }))
+      );
+      setPendingChanges(null);
+    }
+  };
+
+  const handleRejectChanges = () => {
+    if (pendingChanges) {
+      setSteps((steps) =>
+        steps.filter((s) => !pendingChanges.steps.find((ps) => ps.id === s.id))
+      );
+      setPendingChanges(null);
     }
   };
 
@@ -231,12 +259,32 @@ export function Builder() {
               <Sparkles className="w-5 h-5 text-blue-500" />
               Building Your Website
             </h1>
-            <div className="text-sm text-gray-600">
-              {loading
-                ? "Generating..."
-                : templateSet
-                ? "Template ready"
-                : "Initializing..."}
+            <div className="flex items-center gap-4">
+              {pendingChanges && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleAcceptChanges}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors"
+                  >
+                    <Check className="w-4 h-4" />
+                    Accept Changes
+                  </button>
+                  <button
+                    onClick={handleRejectChanges}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                    Reject Changes
+                  </button>
+                </div>
+              )}
+              <div className="text-sm text-gray-600">
+                {loading
+                  ? "Generating..."
+                  : templateSet
+                  ? "Template ready"
+                  : "Initializing..."}
+              </div>
             </div>
           </div>
         </header>
