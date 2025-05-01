@@ -1,295 +1,316 @@
-import React, { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
-import { StepsList } from '../components/StepsList';
-import { FileExplorer } from '../components/FileExplorer';
-import { TabView } from '../components/TabView';
-import { CodeEditor } from '../components/CodeEditor';
-import { PreviewFrame } from '../components/PreviewFrame';
-import { Step, FileItem, StepType } from '../types';
-import axios from 'axios';
-import { BACKEND_URL } from '../config';
-import { parseXml } from '../steps';
-import { useWebContainer } from '../hooks/useWebContainer';
-import { FileNode } from '@webcontainer/api';
-import { Loader } from '../components/Loader';
-import { Sparkles } from 'lucide-react';
+import React, { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { StepsList } from "../components/StepsList";
+import { FileExplorer } from "../components/FileExplorer";
+import { TabView } from "../components/TabView";
+import { CodeEditor } from "../components/CodeEditor";
+import { PreviewFrame } from "../components/PreviewFrame";
+import { Step, FileItem, StepType } from "../types";
+import axios from "axios";
+import { BACKEND_URL } from "../config";
+import { parseXml } from "../steps";
+import { useWebContainer } from "../hooks/useWebContainer";
+import { FileSystemTree } from "@webcontainer/api";
+import { Loader } from "../components/Loader";
+import { Sparkles, Send, MessageSquare } from "lucide-react";
 
-const MOCK_FILE_CONTENT = `// This is a sample file content
-import React from 'react';
-
-function Component() {
-  return <div>Hello World</div>;
+interface LocationState {
+  prompt: string;
 }
-
-export default Component;`;
 
 export function Builder() {
   const location = useLocation();
-  const { prompt } = location.state as { prompt: string };
-  const [userPrompt, setPrompt] = useState("");
-  const [llmMessages, setLlmMessages] = useState<{role: "user" | "assistant", content: string;}[]>([]);
+  const state = location.state as LocationState;
+  const { prompt } = state;
   const [loading, setLoading] = useState(false);
   const [templateSet, setTemplateSet] = useState(false);
   const webcontainer = useWebContainer();
+  const [userPrompt, setUserPrompt] = useState("");
+  const [llmMessages, setLlmMessages] = useState<
+    Array<{ role: "user" | "assistant"; content: string }>
+  >([]);
 
   const [currentStep, setCurrentStep] = useState(1);
-  const [activeTab, setActiveTab] = useState<'code' | 'preview'>('code');
+  const [activeTab, setActiveTab] = useState<"code" | "preview">("code");
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
-  
   const [steps, setSteps] = useState<Step[]>([]);
-
   const [files, setFiles] = useState<FileItem[]>([]);
 
   useEffect(() => {
     let originalFiles = [...files];
     let updateHappened = false;
-    steps.filter(({status}) => status === "pending").map(step => {
-      updateHappened = true;
-      if (step?.type === StepType.CreateFile) {
-        let parsedPath = step.path?.split("/") ?? []; // ["src", "components", "App.tsx"]
-        let currentFileStructure = [...originalFiles]; // {}
-        let finalAnswerRef = currentFileStructure;
-  
-        let currentFolder = ""
-        while(parsedPath.length) {
-          currentFolder =  `${currentFolder}/${parsedPath[0]}`;
-          let currentFolderName = parsedPath[0];
-          parsedPath = parsedPath.slice(1);
-  
-          if (!parsedPath.length) {
-            // final file
-            let file = currentFileStructure.find(x => x.path === currentFolder)
-            if (!file) {
-              currentFileStructure.push({
-                name: currentFolderName,
-                type: 'file',
-                path: currentFolder,
-                content: step.code
-              })
-            } else {
-              file.content = step.code;
-            }
-          } else {
-            /// in a folder
-            let folder = currentFileStructure.find(x => x.path === currentFolder)
-            if (!folder) {
-              // create the folder
-              currentFileStructure.push({
-                name: currentFolderName,
-                type: 'folder',
-                path: currentFolder,
-                children: []
-              })
-            }
-  
-            currentFileStructure = currentFileStructure.find(x => x.path === currentFolder)!.children!;
-          }
-        }
-        originalFiles = finalAnswerRef;
-      }
+    steps
+      .filter(({ status }) => status === "pending")
+      .map((step) => {
+        updateHappened = true;
+        if (step?.type === StepType.CreateFile) {
+          const parsedPath = step.path?.split("/") ?? []; // ["src", "components", "App.tsx"]
+          let currentFileStructure = [...originalFiles]; // {}
+          const finalAnswerRef = currentFileStructure;
 
-    })
+          let currentFolder = "";
+          while (parsedPath.length) {
+            const currentFolderName = parsedPath[0];
+            currentFolder = `${currentFolder}/${currentFolderName}`;
+            parsedPath.shift();
+
+            if (!parsedPath.length) {
+              // final file
+              const file = currentFileStructure.find(
+                (x) => x.path === currentFolder
+              );
+              if (!file) {
+                currentFileStructure.push({
+                  name: currentFolderName,
+                  type: "file",
+                  path: currentFolder,
+                  content: step.code,
+                });
+              } else {
+                file.content = step.code;
+              }
+            } else {
+              /// in a folder
+              const folder = currentFileStructure.find(
+                (x) => x.path === currentFolder
+              );
+              if (!folder) {
+                // create the folder
+                currentFileStructure.push({
+                  name: currentFolderName,
+                  type: "folder",
+                  path: currentFolder,
+                  children: [],
+                });
+              }
+
+              currentFileStructure = currentFileStructure.find(
+                (x) => x.path === currentFolder
+              )!.children!;
+            }
+          }
+          originalFiles = finalAnswerRef;
+        }
+      });
 
     if (updateHappened) {
-
-      setFiles(originalFiles)
-      setSteps(steps => steps.map((s: Step) => {
-        return {
+      setFiles(originalFiles);
+      setSteps((steps) =>
+        steps.map((s: Step) => ({
           ...s,
-          status: "completed"
-        }
-        
-      }))
+          status: "completed",
+        }))
+      );
     }
-    console.log(files);
   }, [steps, files]);
 
   useEffect(() => {
-    const createMountStructure = (files: FileItem[]): Record<string, any> => {
-      const mountStructure: Record<string, any> = {};
-  
-      const processFile = (file: FileItem, isRootFolder: boolean) => {  
-        if (file.type === 'folder') {
-          // For folders, create a directory entry
-          mountStructure[file.name] = {
-            directory: file.children ? 
-              Object.fromEntries(
-                file.children.map(child => [child.name, processFile(child, false)])
-              ) 
-              : {}
+    const createMountStructure = (files: FileItem[]): FileSystemTree => {
+      const mountStructure: FileSystemTree = {};
+
+      const processFile = (file: FileItem): FileSystemTree[string] => {
+        if (file.type === "folder") {
+          return {
+            directory: file.children
+              ? Object.fromEntries(
+                  file.children.map((child) => [child.name, processFile(child)])
+                )
+              : {},
           };
-        } else if (file.type === 'file') {
-          if (isRootFolder) {
-            mountStructure[file.name] = {
-              file: {
-                contents: file.content || ''
-              }
-            };
-          } else {
-            // For files, create a file entry with contents
-            return {
-              file: {
-                contents: file.content || ''
-              }
-            };
-          }
+        } else {
+          return {
+            file: {
+              contents: file.content || "",
+            },
+          };
         }
-  
-        return mountStructure[file.name];
       };
-  
-      // Process each top-level file/folder
-      files.forEach(file => processFile(file, true));
-  
+
+      files.forEach((file) => {
+        mountStructure[file.name] = processFile(file);
+      });
+
       return mountStructure;
     };
-  
+
     const mountStructure = createMountStructure(files);
-  
-    // Mount the structure if WebContainer is available
-    console.log(mountStructure);
-    webcontainer?.mount(mountStructure);
+    if (webcontainer) {
+      webcontainer.mount(mountStructure);
+    }
   }, [files, webcontainer]);
 
-  async function init() {
-    const response = await axios.post(`${BACKEND_URL}/template`, {
-      prompt: prompt.trim()
-    });
-    setTemplateSet(true);
-    
-    const {prompts, uiPrompts} = response.data;
+  useEffect(() => {
+    async function initTemplate() {
+      const response = await axios.post(`${BACKEND_URL}/template`, {
+        prompt: prompt.trim(),
+      });
+      setTemplateSet(true);
 
-    setSteps(parseXml(uiPrompts[0]).map((x: Step) => ({
-      ...x,
-      status: "pending"
-    })));
+      const { prompts, uiPrompts } = response.data;
+      setSteps(
+        parseXml(uiPrompts[0]).map((x: Step) => ({
+          ...x,
+          status: "pending",
+        }))
+      );
+
+      setLoading(true);
+      const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
+        messages: [...prompts, prompt].map((content) => ({
+          role: "user",
+          content,
+        })),
+      });
+
+      setLoading(false);
+      setSteps((s) => [
+        ...s,
+        ...parseXml(stepsResponse.data.response).map((x) => ({
+          ...x,
+          status: "pending" as "pending",
+        })),
+      ]);
+    }
+
+    initTemplate();
+  }, [prompt]);
+
+  const handleChatSubmit = async () => {
+    if (!userPrompt.trim()) return;
+
+    const newMessage = {
+      role: "user",
+      content: userPrompt,
+    } as const;
 
     setLoading(true);
-    const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
-      messages: [...prompts, prompt].map(content => ({
-        role: "user",
-        content
-      }))
-    })
+    try {
+      const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
+        messages: [...llmMessages, newMessage],
+      });
 
-    setLoading(false);
+      setLlmMessages((prev) => [
+        ...prev,
+        newMessage,
+        {
+          role: "assistant",
+          content: stepsResponse.data.response,
+        } as const,
+      ]);
 
-    setSteps(s => [...s, ...parseXml(stepsResponse.data.response).map(x => ({
-      ...x,
-      status: "pending" as "pending"
-    }))]);
+      setSteps((s) => [
+        ...s,
+        ...parseXml(stepsResponse.data.response).map(
+          (x) =>
+            ({
+              ...x,
+              status: "pending",
+            } as const)
+        ),
+      ]);
 
-    setLlmMessages([...prompts, prompt].map(content => ({
-      role: "user",
-      content
-    })));
-
-    setLlmMessages(x => [...x, {role: "assistant", content: stepsResponse.data.response}])
-  }
-
-  useEffect(() => {
-    init();
-  }, [])
+      setUserPrompt("");
+    } catch (error) {
+      console.error("Chat error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex flex-col">
-      <header className="bg-gray-800/50 backdrop-blur-sm border-b border-gray-700/50 px-8 py-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">Website Builder</h1>
-            <p className="text-sm text-gray-400 mt-1 max-w-xl truncate">"{prompt}"</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="text-sm text-gray-400">AI Assistant Active</span>
-          </div>
-        </div>
-      </header>
-      
-      <div className="flex-1 overflow-hidden">
-        <div className="h-full grid grid-cols-4 gap-6 p-6">
-          <div className="col-span-1 space-y-6 overflow-auto">
-            <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700/50 p-6">
-              <div className="max-h-[75vh] overflow-scroll">
-                <StepsList
-                  steps={steps}
-                  currentStep={currentStep}
-                  onStepClick={setCurrentStep}
-                />
-              </div>
-              <div className="mt-6">
-                <div className='flex flex-col gap-4'>
-                  {(loading || !templateSet) && <Loader />}
-                  {!(loading || !templateSet) && (
-                    <div className='flex flex-col gap-4'>
-                      <div className="flex items-center gap-2 text-gray-400">
-                        <Sparkles className="w-5 h-5" />
-                        <span className="text-sm">Ask the AI Assistant</span>
-                      </div>
-                      <textarea 
-                        value={userPrompt} 
-                        onChange={(e) => setPrompt(e.target.value)}
-                        placeholder="Ask for modifications or clarifications..."
-                        className='p-4 w-full bg-gray-900/50 text-gray-100 border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none placeholder-gray-500'
-                      />
-                      <button 
-                        onClick={async () => {
-                          const newMessage = {
-                            role: "user" as "user",
-                            content: userPrompt
-                          };
-
-                          setLoading(true);
-                          const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
-                            messages: [...llmMessages, newMessage]
-                          });
-                          setLoading(false);
-
-                          setLlmMessages(x => [...x, newMessage]);
-                          setLlmMessages(x => [...x, {
-                            role: "assistant",
-                            content: stepsResponse.data.response
-                          }]);
-                          
-                          setSteps(s => [...s, ...parseXml(stepsResponse.data.response).map(x => ({
-                            ...x,
-                            status: "pending" as "pending"
-                          }))]);
-                        }}
-                        className='bg-gradient-to-r from-blue-600 to-purple-600 text-white py-3 px-6 rounded-lg font-medium hover:from-blue-700 hover:to-purple-700 transition-all duration-200 transform hover:scale-[1.02] shadow-lg shadow-blue-500/20'
-                      >
-                        Send Message
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
+    <div className="min-h-screen bg-gray-50">
+      <div className="h-screen flex flex-col">
+        {/* Header */}
+        <header className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-blue-500" />
+              Building Your Website
+            </h1>
+            <div className="text-sm text-gray-600">
+              {loading
+                ? "Generating..."
+                : templateSet
+                ? "Template ready"
+                : "Initializing..."}
             </div>
           </div>
-          <div className="col-span-1">
-            <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700/50 p-6 h-full">
-              <FileExplorer 
-                files={files} 
-                onFileSelect={setSelectedFile}
-              />
+        </header>
+
+        {/* Main Content */}
+        <div className="flex-1 overflow-hidden">
+          <div className="h-full flex">
+            {/* Left Sidebar - File Explorer */}
+            <div className="w-64 border-r border-gray-200 bg-white p-4">
+              <FileExplorer files={files} onFileSelect={setSelectedFile} />
             </div>
-          </div>
-          <div className="col-span-2">
-            <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700/50 p-6 h-full">
-              <TabView
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-              />
-              <div className="h-[calc(100%-4rem)]">
-                {activeTab === 'code' ? (
-                  <CodeEditor file={selectedFile} />
+
+            {/* Main Content Area */}
+            <div className="flex-1 flex flex-col">
+              <div className="p-4">
+                <TabView activeTab={activeTab} onTabChange={setActiveTab} />
+              </div>
+
+              <div className="flex-1 p-4">
+                {loading ? (
+                  <div className="h-full flex items-center justify-center">
+                    <Loader />
+                  </div>
+                ) : activeTab === "code" ? (
+                  <div className="h-full">
+                    <CodeEditor file={selectedFile} />
+                  </div>
                 ) : webcontainer ? (
-                  <PreviewFrame files={files} webContainer={webcontainer} />
+                  <div className="h-full">
+                    <PreviewFrame webContainer={webcontainer} />
+                  </div>
                 ) : (
-                  <div className="h-full flex items-center justify-center text-gray-400">
-                    Loading preview...
+                  <div className="h-full flex items-center justify-center">
+                    <div className="text-gray-500">Loading preview...</div>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Right Sidebar - Steps and Chat */}
+            <div className="w-80 border-l border-gray-200 bg-white flex flex-col">
+              {/* Steps Section */}
+              <div className="flex-1 p-4 overflow-y-auto">
+                <div className="space-y-4">
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Build Progress
+                  </h2>
+                  <StepsList
+                    steps={steps}
+                    currentStep={currentStep}
+                    onStepClick={(step) => setCurrentStep(step)}
+                  />
+                </div>
+              </div>
+
+              {/* Chat Section */}
+              <div className="border-t border-gray-200 p-4">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-gray-900">
+                    <MessageSquare className="w-5 h-5 text-blue-500" />
+                    <h3 className="font-medium">AI Assistant</h3>
+                  </div>
+                  <div className="relative">
+                    <textarea
+                      value={userPrompt}
+                      onChange={(e) => setUserPrompt(e.target.value)}
+                      placeholder="Ask for modifications or clarifications..."
+                      className="w-full p-3 bg-gray-50 text-gray-900 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none placeholder-gray-400 pr-12 min-h-[100px]"
+                    />
+                    <button
+                      onClick={handleChatSubmit}
+                      disabled={loading || !templateSet}
+                      className="absolute bottom-3 right-3 p-2 text-blue-500 hover:text-blue-600 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Send className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
