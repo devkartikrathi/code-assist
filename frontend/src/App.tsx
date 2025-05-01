@@ -7,14 +7,10 @@ import { parseXml } from './steps';
 function App() {
   return (
     <BrowserRouter>
-      <div className="flex h-screen overflow-hidden">
-        <main className="flex-1 overflow-auto">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/builder" element={<Builder />} />
-          </Routes>
-        </main>
-      </div>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/builder" element={<Builder />} />
+      </Routes>
     </BrowserRouter>
   );
 }

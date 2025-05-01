@@ -1,40 +1,33 @@
 import React from 'react';
 import Editor from '@monaco-editor/react';
+import { FileItem } from '../types';
 
 interface CodeEditorProps {
-  content: string;
-  language: string;
+  file: FileItem | null;
 }
 
-export function CodeEditor({ content, language }: CodeEditorProps) {
+export function CodeEditor({ file }: CodeEditorProps) {
+  if (!file) {
+    return (
+      <div className="h-full flex items-center justify-center text-gray-400">
+        Select a file to view its contents
+      </div>
+    );
+  }
+
   return (
-    <div className="h-full">
-      <Editor
-        height="100%"
-        defaultLanguage={language}
-        theme="vs-dark"
-        value={content}
-        options={{
-          readOnly: true,
-          minimap: { enabled: false },
-          fontSize: 14,
-          wordWrap: 'on',
-          scrollBeyondLastLine: false,
-          lineNumbers: 'on',
-          glyphMargin: false,
-          folding: true,
-          lineDecorationsWidth: 0,
-          lineNumbersMinChars: 3,
-          renderLineHighlight: 'all',
-          scrollbar: {
-            vertical: 'visible',
-            horizontal: 'visible',
-            useShadows: false,
-            verticalScrollbarSize: 10,
-            horizontalScrollbarSize: 10,
-          },
-        }}
-      />
-    </div>
+    <Editor
+      height="100%"
+      defaultLanguage="typescript"
+      theme="vs-dark"
+      value={file.content || ''}
+      options={{
+        readOnly: true,
+        minimap: { enabled: false },
+        fontSize: 14,
+        wordWrap: 'on',
+        scrollBeyondLastLine: false,
+      }}
+    />
   );
 }
