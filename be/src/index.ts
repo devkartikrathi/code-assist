@@ -3,9 +3,9 @@ import express from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { BASE_PROMPT, getSystemPrompt } from "./prompts";
 import { ContentBlock, TextBlock } from "@anthropic-ai/sdk/resources";
-import {basePrompt as nodeBasePrompt} from "./defaults/node";
-import {basePrompt as reactBasePrompt} from "./defaults/react";
-import {basePrompt as gameBasePrompt} from "./defaults/game";
+import { basePrompt as nodeBasePrompt } from "./defaults/node";
+import { basePrompt as reactBasePrompt } from "./defaults/react";
+import { basePrompt as gameBasePrompt } from "./defaults/game";
 import cors from "cors";
 
 const anthropic = new Anthropic();
@@ -15,7 +15,7 @@ app.use(express.json())
 
 app.post("/template", async (req, res) => {
     const prompt = req.body.prompt;
-    
+
     const response = await anthropic.messages.create({
         messages: [{
             role: 'user', content: prompt
@@ -50,7 +50,7 @@ app.post("/template", async (req, res) => {
         return;
     }
 
-    res.status(403).json({message: "You cant access this"})
+    res.status(403).json({ message: "You cant access this" })
     return;
 
 })
@@ -64,7 +64,7 @@ app.post("/chat", async (req, res) => {
         system: getSystemPrompt()
     })
 
-    console.log(response);
+
 
     res.json({
         response: (response.content[0] as TextBlock)?.text

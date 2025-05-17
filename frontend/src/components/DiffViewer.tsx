@@ -1,17 +1,17 @@
 import React, { useState } from "react";
-import { Diff, Hunk, parseDiff } from "react-diff-view";
+import { Diff, Hunk, parseDiff, ViewType } from "react-diff-view";
 import "react-diff-view/style/index.css";
 import { FileItem } from "../types";
 import { FileText, Code } from "lucide-react";
 
 // Helper function to generate a more accurate diff between two strings
-function generateDiff(oldContent, newContent, filename) {
-  // Generate unified diff format
+function generateDiff(
+  oldContent: string,
+  newContent: string,
+  filename: string
+) {
   const oldLines = (oldContent || "").split("\n");
   const newLines = (newContent || "").split("\n");
-
-  // This is a simplified diff algorithm that compares line by line
-  // For real applications, use a proper diff algorithm like diff-match-patch
 
   // Find common prefix and suffix
   let i = 0;
@@ -32,7 +32,6 @@ function generateDiff(oldContent, newContent, filename) {
     j++;
   }
 
-  // Create a simplified unified diff format
   const prefixLines = i;
   const suffixLines = j;
   const oldChangedLines = oldLines.length - prefixLines - suffixLines;
@@ -80,7 +79,15 @@ function generateDiff(oldContent, newContent, filename) {
   return diffText;
 }
 
-export function DiffViewer({ originalFile, newFile, onClose }) {
+export function DiffViewer({
+  originalFile,
+  newFile,
+  onClose,
+}: {
+  originalFile: FileItem;
+  newFile: FileItem;
+  onClose: () => void;
+}) {
   const [viewType, setViewType] = useState("unified");
 
   if (!originalFile || !newFile) return null;
@@ -96,8 +103,8 @@ export function DiffViewer({ originalFile, newFile, onClose }) {
       // Continue with diff for new files
     } else {
       return (
-        <div className="w-full h-full overflow-auto bg-white p-4 rounded-lg border border-gray-300">
-          <div className="flex justify-between items-center mb-4 sticky top-0 bg-white p-2 border-b border-gray-200 z-10">
+        <div className="h-full w-full overflow-auto bg-white p-4 rounded-lg border border-gray-300">
+          <div className="flex max-h-400 justify-between items-center mb-4 sticky top-0 bg-white p-2 border-b border-gray-200 z-10">
             <h3 className="text-lg font-medium text-gray-900 flex items-center">
               <FileText className="w-5 h-5 mr-2 text-gray-500" />
               {filename}
@@ -171,7 +178,11 @@ export function DiffViewer({ originalFile, newFile, onClose }) {
       <div className="flex-1 overflow-auto p-4">
         {hasChanges ? (
           <div className="diff-container">
-            <Diff viewType={viewType} diffType={file.type} hunks={file.hunks}>
+            <Diff
+              viewType={viewType as ViewType}
+              diffType={file.type}
+              hunks={file.hunks}
+            >
               {(hunks) =>
                 hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)
               }

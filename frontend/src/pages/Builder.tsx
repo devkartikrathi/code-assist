@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { StepsList } from "../components/StepsList";
 import { FileExplorer } from "../components/FileExplorer";
@@ -12,15 +12,7 @@ import { parseXml } from "../steps";
 import { useWebContainer } from "../hooks/useWebContainer";
 import { FileSystemTree } from "@webcontainer/api";
 import { Loader } from "../components/Loader";
-import {
-  Sparkles,
-  Send,
-  MessageSquare,
-  Check,
-  X,
-  FileText,
-  Code,
-} from "lucide-react";
+import { Sparkles, Send, MessageSquare, Check, X } from "lucide-react";
 
 interface LocationState {
   prompt: string;
@@ -54,10 +46,8 @@ export function Builder() {
     if (!pendingChanges) {
       const stepsToProcess = steps.filter(({ status }) => status === "pending");
       if (stepsToProcess.length > 0) {
-        // Pause here - don't process changes automatically
-        // Instead, show a dialog first and then process when user wants to review
-        const originalFiles = JSON.parse(JSON.stringify(files)); // Deep clone
-        const newFiles = JSON.parse(JSON.stringify(files)); // Deep clone
+        const originalFiles = JSON.parse(JSON.stringify(files));
+        const newFiles = JSON.parse(JSON.stringify(files));
         let updateHappened = false;
         const affected = new Set<string>();
 
@@ -76,7 +66,7 @@ export function Builder() {
               if (!parsedPath.length) {
                 affected.add(currentFolder);
                 const file = currentFileStructure.find(
-                  (x) => x.path === currentFolder
+                  (x: FileItem) => x.path === currentFolder
                 );
                 if (!file) {
                   currentFileStructure.push({
@@ -90,7 +80,7 @@ export function Builder() {
                 }
               } else {
                 const folder = currentFileStructure.find(
-                  (x) => x.path === currentFolder
+                  (x: FileItem) => x.path === currentFolder
                 );
                 if (!folder) {
                   currentFileStructure.push({
@@ -102,7 +92,7 @@ export function Builder() {
                 }
 
                 currentFileStructure = currentFileStructure.find(
-                  (x) => x.path === currentFolder
+                  (x: FileItem) => x.path === currentFolder
                 )!.children!;
               }
             }
@@ -117,12 +107,9 @@ export function Builder() {
           });
           setAffectedFiles(Array.from(affected));
 
-          // ALWAYS show diff mode when changes are pending
           setDiffMode(true);
-          // Force switching to code view
           setActiveTab("code");
 
-          // If there's an affected file and no current selection, select the first affected file
           if (affected.size > 0) {
             const affectedPath = Array.from(affected)[0];
             const affectedFile = findFileByPath(newFiles, affectedPath);
@@ -135,7 +122,6 @@ export function Builder() {
     }
   }, [steps, files]);
 
-  // Helper function to find a file by path
   const findFileByPath = (
     fileList: FileItem[],
     path: string
@@ -214,7 +200,7 @@ export function Builder() {
       ...s,
       ...parseXml(stepsResponse.data.response).map((x) => ({
         ...x,
-        status: "pending" as "pending",
+        status: "pending" as const,
       })),
     ]);
 
@@ -273,14 +259,12 @@ export function Builder() {
 
   const handleAcceptChanges = () => {
     if (pendingChanges) {
-      // Make sure the user has reviewed changes first
       if (!diffMode) {
         setDiffMode(true);
         return;
       }
 
-      // Apply the changes
-      setFiles(JSON.parse(JSON.stringify(pendingChanges.newFiles))); // Deep clone to avoid reference issues
+      setFiles(JSON.parse(JSON.stringify(pendingChanges.newFiles)));
       setSteps((steps) =>
         steps.map((s) => ({
           ...s,
@@ -295,13 +279,11 @@ export function Builder() {
 
   const handleRejectChanges = () => {
     if (pendingChanges) {
-      // Make sure the user has reviewed changes first
       if (!diffMode) {
         setDiffMode(true);
         return;
       }
 
-      // Reject the changes
       setSteps((steps) =>
         steps.filter((s) => !pendingChanges.steps.find((ps) => ps.id === s.id))
       );
@@ -315,26 +297,9 @@ export function Builder() {
     setDiffMode(false);
   };
 
-  // Auto-select affected file when clicking on changes button
-  const handleShowChanges = () => {
-    if (affectedFiles.length > 0 && pendingChanges) {
-      const firstAffectedPath = affectedFiles[0];
-      const firstAffectedFile = findFileByPath(
-        pendingChanges.newFiles,
-        firstAffectedPath
-      );
-      if (firstAffectedFile) {
-        setSelectedFile(firstAffectedFile);
-      }
-      setDiffMode(true);
-      setActiveTab("code");
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="h-screen flex flex-col">
-        {/* Header */}
         <header className="bg-white border-b border-gray-200 px-6 py-4">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
@@ -378,10 +343,8 @@ export function Builder() {
           </div>
         </header>
 
-        {/* Main Content */}
         <div className="flex-1 overflow-hidden">
           <div className="h-full flex">
-            {/* Left Sidebar - Steps and Chat */}
             <div className="w-80 border-r border-gray-200 bg-white flex flex-col">
               <div className="flex-1 p-4 overflow-y-auto">
                 <div className="space-y-4">
@@ -396,7 +359,6 @@ export function Builder() {
                 </div>
               </div>
 
-              {/* Chat Section */}
               <div className="border-t border-gray-200 p-4">
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-gray-900">
@@ -428,7 +390,6 @@ export function Builder() {
               </div>
             </div>
 
-            {/* File Explorer */}
             <div className="w-64 border-r border-gray-200 bg-white p-4">
               <FileExplorer
                 files={pendingChanges ? pendingChanges.newFiles : files}
@@ -437,7 +398,6 @@ export function Builder() {
               />
             </div>
 
-            {/* Main Content Area */}
             <div className="flex-1 flex flex-col">
               <div className="p-4">
                 <TabView activeTab={activeTab} onTabChange={setActiveTab} />

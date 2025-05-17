@@ -17,14 +17,6 @@ export function Home() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center p-4">
       <div className="max-w-4xl w-full">
         <div className="text-center mb-16">
-          <div className="flex justify-center mb-8">
-            <div className="relative">
-              <div className="absolute inset-0 bg-blue-500/10 blur-2xl rounded-full"></div>
-              <div className="relative flex items-center justify-center w-24 h-24 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full shadow-lg shadow-blue-500/20 transform hover:scale-105 transition-transform duration-300">
-                <Wand2 className="w-12 h-12 text-white" strokeWidth={1.5} />
-              </div>
-            </div>
-          </div>
           <h1 className="text-6xl font-bold text-gray-900 mb-6">
             AI Website Builder
             <span className="text-blue-500">.</span>
