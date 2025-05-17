@@ -64,11 +64,11 @@ app.post("/chat", async (req, res) => {
         system: getSystemPrompt()
     })
 
-
-
     res.json({
         response: (response.content[0] as TextBlock)?.text
     });
 })
 
+
 app.listen(3000);
+
